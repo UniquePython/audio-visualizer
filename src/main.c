@@ -1,6 +1,7 @@
 #include <raylib.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <math.h>
 #include "kiss_fft.h"
 
@@ -55,6 +56,9 @@ int main(void)
 	AttachAudioStreamProcessor(music.stream, Callback);
 	PlayMusicStream(music);
 
+	bool paused = false;
+	float volume = 1.0f;
+
 	kiss_fft_cfg cfg = kiss_fft_alloc(NSAMPLES, 0, NULL, NULL);
 
 	kiss_fft_cpx fin[NSAMPLES];
@@ -66,6 +70,38 @@ int main(void)
 		BeginDrawing();
 
 		ClearBackground(BLACK);
+
+		if (IsKeyPressed(KEY_SPACE))
+		{
+			paused = !paused;
+			if (paused)
+				PauseMusicStream(music);
+			else
+				ResumeMusicStream(music);
+		}
+
+		if (IsKeyPressed(KEY_RIGHT))
+			volume += 0.05f;
+		if (IsKeyPressed(KEY_LEFT))
+			volume -= 0.05f;
+
+		if (volume >= 1.0f)
+			volume = 1.0f;
+		if (volume <= 0.0f)
+			volume = 0.0f;
+
+		SetMusicVolume(music, volume);
+
+		char buffer[32];
+
+		sprintf(buffer, "%s", paused ? "PAUSED" : "PLAYING");
+		int textWidth = MeasureText(buffer, 30);
+		DrawText(buffer, WIDTH - textWidth - 10, 10, 30, WHITE);
+
+		sprintf(buffer, "%i%%", (int)(volume * 100));
+		textWidth = MeasureText(buffer, 30);
+		DrawText(buffer, WIDTH - textWidth - 10, 40, 30, WHITE);
+
 		UpdateMusicStream(music);
 
 		if (COUNT == 0)
@@ -127,7 +163,9 @@ void DrawBars(const float *magnitudes)
 
 		float scaled = logf(1.0f + max) * MAG_SCALE;
 		smoothed[bar] = smoothed[bar] * SMOOTHING + scaled * (1.0f - SMOOTHING);
-		float hue = 120 * (1 - smoothed[bar] / HEIGHT);
+		float hue = 75 * (1 - smoothed[bar] / HEIGHT);
+		if (hue < 0)
+			hue = 0;
 		DrawRectangle(bar * (WIDTH / NBARS), HEIGHT - smoothed[bar], BAR_WIDTH, smoothed[bar], ColorFromHSV(hue, 1.0f, 1.0f));
 	}
 }
