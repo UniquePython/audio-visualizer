@@ -11,13 +11,10 @@
 #define HEIGHT 600
 
 #define NSAMPLES 2048
-
 #define NBARS 64
 #define BAR_WIDTH 10
 
-#define NGROUPS (((NSAMPLES) / 2) / NBARS)
 #define MAG_SCALE 80.0f
-
 #define SMOOTHING 0.8f
 
 #define FONT_SIZE 30
@@ -57,6 +54,7 @@ int main(void)
 		CloseWindow();
 		exit(EXIT_FAILURE);
 	}
+
 	AttachAudioStreamProcessor(music.stream, Callback);
 	PlayMusicStream(music);
 
@@ -66,17 +64,44 @@ int main(void)
 	char seek_text[32] = {0};
 
 	kiss_fft_cfg cfg = kiss_fft_alloc(NSAMPLES, 0, NULL, NULL);
-
 	kiss_fft_cpx fin[NSAMPLES];
 	kiss_fft_cpx fout[NSAMPLES];
 	float mag[NSAMPLES / 2];
 
+	// Load shader and render texture
+	Shader extract = LoadShader(NULL, "./bloom_extract.fs");
+	Shader blur = LoadShader(NULL, "./bloom_blur.fs");
+
+	RenderTexture2D scene = LoadRenderTexture(WIDTH, HEIGHT);
+	RenderTexture2D bright = LoadRenderTexture(WIDTH, HEIGHT);
+
+	// Pass texture size to blur shader
+	float tex_size[2] = {WIDTH, HEIGHT};
+	SetShaderValue(blur, GetShaderLocation(blur, "texSize"), tex_size, SHADER_UNIFORM_VEC2);
+
+	// Bind original scene texture to slot 1
+	int original_loc = GetShaderLocation(blur, "original");
+	SetShaderValueTexture(blur, original_loc, scene.texture);
+
 	while (!WindowShouldClose())
 	{
-		BeginDrawing();
+		UpdateMusicStream(music);
 
-		ClearBackground(BLACK);
+		// --- FFT processing ---
+		if (COUNT == 0)
+		{
+			for (int i = 0; i < NSAMPLES; i++)
+			{
+				fin[i].r = BUFFER[i];
+				fin[i].i = 0.0f;
+			}
+			kiss_fft(cfg, fin, fout);
+		}
 
+		for (int j = 0; j < NSAMPLES / 2; j++)
+			mag[j] = hypotf(fout[j].r, fout[j].i);
+
+		// --- Controls ---
 		if (IsKeyPressed(KEY_SPACE))
 		{
 			paused = !paused;
@@ -90,15 +115,11 @@ int main(void)
 			volume += 0.05f;
 		if (IsKeyPressed(KEY_DOWN))
 			volume -= 0.05f;
-
-		if (volume >= 1.0f)
+		if (volume > 1.0f)
 			volume = 1.0f;
-		if (volume <= 0.0f)
+		if (volume < 0.0f)
 			volume = 0.0f;
-
 		SetMusicVolume(music, volume);
-
-		int textWidth = 0;
 
 		if (IsKeyPressed(KEY_RIGHT))
 		{
@@ -114,53 +135,59 @@ int main(void)
 		}
 
 		if (seek_timer > 0.0f)
-		{
 			seek_timer -= GetFrameTime();
-			textWidth = MeasureText(seek_text, FONT_SIZE);
-			DrawText(seek_text, WIDTH - textWidth - 10, 70, FONT_SIZE, WHITE);
-		}
+
+		// --- DRAWING ---
+		// Pass 1: draw bars to scene texture
+		BeginTextureMode(scene);
+		ClearBackground(BLACK);
+		DrawBars(mag);
+		EndTextureMode();
+
+		// Pass 2: extract bright areas
+		BeginTextureMode(bright);
+		ClearBackground(BLACK);
+		BeginShaderMode(extract);
+		DrawTextureRec(scene.texture, (Rectangle){0, 0, scene.texture.width, -scene.texture.height}, (Vector2){0, 0}, WHITE);
+		EndShaderMode();
+		EndTextureMode();
+
+		// Pass 3: blur bright + composite onto original
+		BeginDrawing();
+		ClearBackground(BLACK);
+		BeginShaderMode(blur);
+		DrawTextureRec(bright.texture, (Rectangle){0, 0, bright.texture.width, -bright.texture.height}, (Vector2){0, 0}, WHITE);
+		EndShaderMode();
+
+		// Draw HUD on top
+		if (seek_timer > 0.0f)
+			DrawText(seek_text, WIDTH - MeasureText(seek_text, FONT_SIZE) - 10, 70, FONT_SIZE, WHITE);
 
 		char hud_center[32] = {0};
-		sprintf(hud_center, "%02i:%02i", (int)GetMusicTimePlayed(music) / 60, (int)GetMusicTimePlayed(music) % 60);
-		textWidth = MeasureText(hud_center, FONT_SIZE);
-		DrawText(hud_center, (WIDTH - textWidth) / 2, 10, FONT_SIZE, WHITE);
+		sprintf(hud_center, "%02i:%02i",
+				(int)GetMusicTimePlayed(music) / 60,
+				(int)GetMusicTimePlayed(music) % 60);
+		DrawText(hud_center, (WIDTH - MeasureText(hud_center, FONT_SIZE)) / 2, 10, FONT_SIZE, WHITE);
 
 		char hud_right[32] = {0};
-
 		sprintf(hud_right, "%s", paused ? "PAUSED" : "PLAYING");
-		textWidth = MeasureText(hud_right, FONT_SIZE);
-		DrawText(hud_right, WIDTH - textWidth - 10, 10, FONT_SIZE, WHITE);
+		DrawText(hud_right, WIDTH - MeasureText(hud_right, FONT_SIZE) - 10, 10, FONT_SIZE, WHITE);
 
 		sprintf(hud_right, "%i%%", (int)(volume * 100));
-		textWidth = MeasureText(hud_right, FONT_SIZE);
-		DrawText(hud_right, WIDTH - textWidth - 10, 40, FONT_SIZE, WHITE);
-
-		UpdateMusicStream(music);
-
-		if (COUNT == 0)
-		{
-			for (int i = 0; i < NSAMPLES; i++)
-			{
-				fin[i].r = BUFFER[i];
-				fin[i].i = 0.0f;
-			}
-			kiss_fft(cfg, fin, fout);
-		}
-
-		for (int j = 0; j < NSAMPLES / 2; j++)
-			mag[j] = hypotf(fout[j].i, fout[j].r);
-
-		DrawBars(mag);
+		DrawText(hud_right, WIDTH - MeasureText(hud_right, FONT_SIZE) - 10, 40, FONT_SIZE, WHITE);
 
 		EndDrawing();
 	}
 
 	kiss_fft_free(cfg);
-
 	CloseAudioDevice();
+	UnloadShader(extract);
+	UnloadShader(blur);
+	UnloadRenderTexture(scene);
+	UnloadRenderTexture(bright);
 	CloseWindow();
 
-	return EXIT_SUCCESS;
+	return 0;
 }
 
 // --- IMPLEMENTATIONS ------------>
@@ -172,7 +199,6 @@ void Callback(void *buffer, unsigned int frames)
 		BUFFER[COUNT++] = samples[i * 2]; // left channel only
 	if (COUNT >= NSAMPLES)
 		COUNT = 0;
-	return;
 }
 
 void DrawBars(const float *magnitudes)
@@ -189,16 +215,16 @@ void DrawBars(const float *magnitudes)
 
 		float max = 0;
 		for (int i = start; i < end; i++)
-		{
 			if (magnitudes[i] > max)
 				max = magnitudes[i];
-		}
 
 		float scaled = logf(1.0f + max) * MAG_SCALE;
 		smoothed[bar] = smoothed[bar] * SMOOTHING + scaled * (1.0f - SMOOTHING);
-		float hue = 75 * (1 - smoothed[bar] / HEIGHT);
+
+		float hue = 120 * (1 - smoothed[bar] / HEIGHT);
 		if (hue < 0)
 			hue = 0;
+
 		DrawRectangle(bar * (WIDTH / NBARS), HEIGHT - smoothed[bar], BAR_WIDTH, smoothed[bar], ColorFromHSV(hue, 1.0f, 1.0f));
 	}
 }
