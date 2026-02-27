@@ -127,6 +127,7 @@ void DrawBars(const float *magnitudes)
 
 		float scaled = logf(1.0f + max) * MAG_SCALE;
 		smoothed[bar] = smoothed[bar] * SMOOTHING + scaled * (1.0f - SMOOTHING);
-		DrawRectangle(bar * (WIDTH / NBARS), HEIGHT - smoothed[bar], BAR_WIDTH, smoothed[bar], RAYWHITE);
+		float hue = 120 * (1 - smoothed[bar] / HEIGHT);
+		DrawRectangle(bar * (WIDTH / NBARS), HEIGHT - smoothed[bar], BAR_WIDTH, smoothed[bar], ColorFromHSV(hue, 1.0f, 1.0f));
 	}
 }
