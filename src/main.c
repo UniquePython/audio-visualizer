@@ -13,15 +13,35 @@
 int main(void)
 {
 	InitWindow(WIDTH, HEIGHT, "Music Visualizer");
+	if (!IsWindowReady())
+		exit(EXIT_FAILURE);
 	SetTargetFPS(GetMonitorRefreshRate(GetCurrentMonitor()));
+
+	InitAudioDevice();
+	if (!IsAudioDeviceReady())
+	{
+		CloseWindow();
+		exit(EXIT_FAILURE);
+	}
+
+	Music music = LoadMusicStream("./believer_music.mp3");
+	if (!IsMusicValid(music))
+	{
+		CloseAudioDevice();
+		CloseWindow();
+		exit(EXIT_FAILURE);
+	}
+	PlayMusicStream(music);
 
 	while (!WindowShouldClose())
 	{
 		BeginDrawing();
 		ClearBackground(BLACK);
+		UpdateMusicStream(music);
 		EndDrawing();
 	}
 
+	CloseAudioDevice();
 	CloseWindow();
 
 	return EXIT_SUCCESS;
