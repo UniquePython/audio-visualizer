@@ -9,13 +9,15 @@
 #define WIDTH 900
 #define HEIGHT 600
 
-#define NSAMPLES 1024
+#define NSAMPLES 2048
 
-#define NBARS 32
-#define BAR_WIDTH 20
+#define NBARS 64
+#define BAR_WIDTH 10
 
 #define NGROUPS (((NSAMPLES) / 2) / NBARS)
-#define MAG_SCALE 2.0f
+#define MAG_SCALE 80.0f
+
+#define SMOOTHING 0.8f
 
 // --- GLOBALS ------------>
 
@@ -106,25 +108,25 @@ void Callback(void *buffer, unsigned int frames)
 
 void DrawBars(const float *magnitudes)
 {
-	float groups[NBARS];
-	int nmax = 0;
-	float max = -1;
-	for (int i = 0; i < NSAMPLES / 2; i++)
-	{
-		if (magnitudes[i] > max)
-			max = magnitudes[i];
+	int start, end;
+	static float smoothed[NBARS];
 
-		if (i % NGROUPS == NGROUPS - 1)
+	for (int bar = 0; bar < NBARS; bar++)
+	{
+		start = round(powf(NSAMPLES / 2, (float)bar / NBARS));
+		end = round(powf(NSAMPLES / 2, (float)(bar + 1) / NBARS));
+		if (end <= start)
+			end = start + 1;
+
+		float max = 0;
+		for (int i = start; i < end; i++)
 		{
-			groups[nmax++] = max;
-			max = -1;
+			if (magnitudes[i] > max)
+				max = magnitudes[i];
 		}
-	}
 
-	int height;
-	for (int j = 0; j < NBARS; j++)
-	{
-		height = groups[j] * MAG_SCALE;
-		DrawRectangle(j * (WIDTH / NBARS), HEIGHT - height, BAR_WIDTH, height, RAYWHITE);
+		float scaled = logf(1.0f + max) * MAG_SCALE;
+		smoothed[bar] = smoothed[bar] * SMOOTHING + scaled * (1.0f - SMOOTHING);
+		DrawRectangle(bar * (WIDTH / NBARS), HEIGHT - smoothed[bar], BAR_WIDTH, smoothed[bar], RAYWHITE);
 	}
 }
