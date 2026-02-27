@@ -20,6 +20,10 @@
 
 #define SMOOTHING 0.8f
 
+#define FONT_SIZE 30
+#define SKIP_SECONDS 5.0f
+#define SEEK_TIMER 0.5f
+
 // --- GLOBALS ------------>
 
 float BUFFER[NSAMPLES];
@@ -58,6 +62,8 @@ int main(void)
 
 	bool paused = false;
 	float volume = 1.0f;
+	float seek_timer = 0.0f;
+	char seek_text[32] = {0};
 
 	kiss_fft_cfg cfg = kiss_fft_alloc(NSAMPLES, 0, NULL, NULL);
 
@@ -80,9 +86,9 @@ int main(void)
 				ResumeMusicStream(music);
 		}
 
-		if (IsKeyPressed(KEY_RIGHT))
+		if (IsKeyPressed(KEY_UP))
 			volume += 0.05f;
-		if (IsKeyPressed(KEY_LEFT))
+		if (IsKeyPressed(KEY_DOWN))
 			volume -= 0.05f;
 
 		if (volume >= 1.0f)
@@ -92,15 +98,42 @@ int main(void)
 
 		SetMusicVolume(music, volume);
 
-		char buffer[32];
+		int textWidth = 0;
 
-		sprintf(buffer, "%s", paused ? "PAUSED" : "PLAYING");
-		int textWidth = MeasureText(buffer, 30);
-		DrawText(buffer, WIDTH - textWidth - 10, 10, 30, WHITE);
+		if (IsKeyPressed(KEY_RIGHT))
+		{
+			seek_timer = SEEK_TIMER;
+			SeekMusicStream(music, GetMusicTimePlayed(music) + SKIP_SECONDS);
+			sprintf(seek_text, ">> %gs", SKIP_SECONDS);
+		}
+		if (IsKeyPressed(KEY_LEFT))
+		{
+			seek_timer = SEEK_TIMER;
+			SeekMusicStream(music, GetMusicTimePlayed(music) - SKIP_SECONDS);
+			sprintf(seek_text, "<< %gs", SKIP_SECONDS);
+		}
 
-		sprintf(buffer, "%i%%", (int)(volume * 100));
-		textWidth = MeasureText(buffer, 30);
-		DrawText(buffer, WIDTH - textWidth - 10, 40, 30, WHITE);
+		if (seek_timer > 0.0f)
+		{
+			seek_timer -= GetFrameTime();
+			textWidth = MeasureText(seek_text, FONT_SIZE);
+			DrawText(seek_text, WIDTH - textWidth - 10, 70, FONT_SIZE, WHITE);
+		}
+
+		char hud_center[32] = {0};
+		sprintf(hud_center, "%02i:%02i", (int)GetMusicTimePlayed(music) / 60, (int)GetMusicTimePlayed(music) % 60);
+		textWidth = MeasureText(hud_center, FONT_SIZE);
+		DrawText(hud_center, (WIDTH - textWidth) / 2, 10, FONT_SIZE, WHITE);
+
+		char hud_right[32] = {0};
+
+		sprintf(hud_right, "%s", paused ? "PAUSED" : "PLAYING");
+		textWidth = MeasureText(hud_right, FONT_SIZE);
+		DrawText(hud_right, WIDTH - textWidth - 10, 10, FONT_SIZE, WHITE);
+
+		sprintf(hud_right, "%i%%", (int)(volume * 100));
+		textWidth = MeasureText(hud_right, FONT_SIZE);
+		DrawText(hud_right, WIDTH - textWidth - 10, 40, FONT_SIZE, WHITE);
 
 		UpdateMusicStream(music);
 
